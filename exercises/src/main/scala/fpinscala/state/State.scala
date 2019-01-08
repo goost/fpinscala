@@ -171,11 +171,11 @@ case class Machine(locked: Boolean, candies: Int, coins: Int)
 
 
 object CandyMachine extends App {
-  def simulateMachine(inputs: List[Input]): State[Machine, (Int, Int)] = {
-    inputs.foldRight(State.unit[Machine, (Int,Int)]((0,0)))((input, state) => {
-      State.modify[Machine] _ compose changeMachineState
-    })
-  }
+//  def simulateMachine(inputs: List[Input]): State[Machine, (Int, Int)] = {
+//    inputs.foldRight(State.unit[Machine, (Int,Int)]((0,0)))((input, state) => {
+//      State.modify[Machine] _ compose changeMachineState
+//    })
+//  }
 
 
   val machine = Machine(true, 5, 0)
@@ -191,7 +191,7 @@ object CandyMachine extends App {
     }
   }
 
-  println(changeMachineState(Turn, changeMachineState(Coin, machine)))
+//  println(changeMachineState(Turn, changeMachineState(Coin, machine)))
 
 
 }
