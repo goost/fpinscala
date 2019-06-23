@@ -28,6 +28,21 @@ object Par {
 
   def map2[A,B,C](a: Par[A], b:Par[B])(f: (A,B) => C): Par[C] = (es: ExecutorService) =>  CombinedFuture(a(es), b(es))(f)
 
+  def map4[A,B,C,D,E,F](a: Par[A],b: Par[B],c: Par[C],d: Par[D], e: Par[E])(f: (A,B,C,D,E) => F): Par[F] = {
+    val t = map2(a,b)((_,_))
+    val t2 = map2(c,d)((_,_))
+    val t3 = map2(t2,e)((_,_))
+    map2(t,t3)((p1,p2) => f(p1._1,p1._2,p2._1._1,p2._1._2,p2._2))
+  }
+
+  def map4[A,B,C,D,E](a: Par[A],b: Par[B],c: Par[C],d: Par[D])(f: (A,B,C,D) => E): Par[E] = {
+    map2(map2(a,b)((_,_)),map2(c,d)((_,_)))((p1,p2) => f(p1._1,p1._2,p2._1,p2._2))
+  }
+
+  def map3[A,B,C,D](a: Par[A],b: Par[B],c: Par[C])(f: (A,B,C) => D): Par[D] = {
+    map2(map2(a,b)((_,_)),map2(c,unit())((_,_)))((p1,p2) => f(p1._1,p1._2,p2._1))
+  }
+
   private case class CombinedFuture[A,B,C](l: Future[A], r: Future[B])(f:(A,B) => C) extends Future[C] {
     override def cancel(mayInterruptIfRunning: Boolean): Boolean = l.cancel(mayInterruptIfRunning) && r.cancel(mayInterruptIfRunning)
 
@@ -73,6 +88,24 @@ object Par {
     map(fbs)(_.filter(_._1).map(_._2))
   }
 
+  def parFold[A](z: => A)(f: (A,A) => A)(as: IndexedSeq[A]): Par[A] = fork {
+    if (as.size <= 1)
+      unit(as.headOption getOrElse z)
+    else {
+      val (l,r) = as.splitAt(as.length/2)
+      map2(parFold(z)(f)(l), parFold(z)(f)(r))(f)
+    }
+  }
+
+  def parFold2[A,B](z: => B)(t: A => B)(f: (B,B) => B)(as: IndexedSeq[A]): Par[B] = fork {
+    if (as.size <= 1)
+      unit(as.headOption.fold(z)(t))
+    else {
+      val (l,r) = as.splitAt(as.length/2)
+      map2(parFold2(z)(t)(f)(l), parFold2(z)(t)(f)(r))(f)
+    }
+  }
+
   def equal[A](e: ExecutorService)(p: Par[A], p2: Par[A]): Boolean = 
     p(e).get == p2(e).get
 
@@ -95,20 +128,24 @@ object Par {
 
 object Examples extends  App{
   import Par._
-  def sum(ints: IndexedSeq[Int]): Par[Int] = // `IndexedSeq` is a superclass of random-access sequences like `Vector` in the standard library. Unlike lists, these sequences provide an efficient `splitAt` method for dividing them into two parts at a particular index.
-    if (ints.size <= 1)
-      Par.unit(ints.headOption getOrElse 0) // `headOption` is a method defined on all collections in Scala. We saw this function in chapter 3.
-    else { 
-      val (l,r) = ints.splitAt(ints.length/2) // Divide the sequence in half using the `splitAt` function.
-      Par.map2(Par.fork(sum(l)), Par.fork(sum(r)))(_+_)  // Recursively sum both halves and add the results together.
-    }
+//  def sum(ints: IndexedSeq[Int]): Par[Int] = // `IndexedSeq` is a superclass of random-access sequences like `Vector` in the standard library. Unlike lists, these sequences provide an efficient `splitAt` method for dividing them into two parts at a particular index.
+//    if (ints.size <= 1)
+//      Par.unit(ints.headOption getOrElse 0) // `headOption` is a method defined on all collections in Scala. We saw this function in chapter 3.
+//    else {
+//      val (l,r) = ints.splitAt(ints.length/2) // Divide the sequence in half using the `splitAt` function.
+//      Par.map2(Par.fork(sum(l)), Par.fork(sum(r)))(_+_)  // Recursively sum both halves and add the results together.
+//    }
+  val sum = Par.parFold(0)(_ + _)_
+  val max = Par.parFold(Int.MinValue)((a,b) => if (a >= b) a else b)_
+  val words = Par.parFold2(0)((p: String) => p.split(" ").length)(_ + _)_
 
-  val ex = Executors.newCachedThreadPool(Executors.defaultThreadFactory())
+  val ex = Executors.newFixedThreadPool(1)//Executors.newCachedThreadPool(Executors.defaultThreadFactory())
   val start = System.nanoTime()
-  //println(sum(IndexedSeq(1,2,3,4))(ex).get(100000000, TimeUnit.NANOSECONDS))
-  //println(s"Took ${System.nanoTime() - start}ns")
+  println(fork(fork(unit(2)))(ex).get)
+  //println(max(IndexedSeq(1,22,3,4))(ex).get())
+  //println(words(IndexedSeq("Ich esse gerne Kuchen", "Nachts, unterm Mondschein", "ja oh ja!"))(ex).get)
 
-  println(parFilter(List(1,2,3,4))(_%2 == 0)(ex).get)
+  //println(parFilter(List(1,2,3,4))(_%2 == 0)(ex).get)
   ex.shutdown()
 
 }
